@@ -1,0 +1,9 @@
+build/
+build-*/
+cmake-build-*/
+*.user
+out/
+__pycache__/
+*.cil
+*.cil.csv
+.claude/

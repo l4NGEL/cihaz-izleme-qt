@@ -1,0 +1,92 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux (Ubuntu 24.04, Qt 6.4, GCC)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bağımlılıklar
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build qt6-base-dev qt6-declarative-dev qt6-serialport-dev qt6-serialbus-dev \
+            qt6-charts-dev qml6-module-qtcharts \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtquick-dialogs \
+            qml6-module-qtqml-workerscript libgtest-dev
+      - name: SocketCAN sanal arayüzü (varsa)
+        run: |
+          sudo apt-get install -y linux-modules-extra-$(uname -r) || true
+          (sudo modprobe vcan && sudo ip link add dev vcan0 type vcan && sudo ip link set up vcan0) \
+            || echo "vcan kullanılamıyor; CAN senaryosu atlanacak"
+      - name: Yapılandır
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCIHAZ_WERROR=ON
+      - name: Derle
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    name: Çekirdek ${{ matrix.sanitizer }} sanitizer
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [thread, address]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bağımlılıklar
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build libgtest-dev
+      - name: TSan için ASLR entropisini düşür
+        if: matrix.sanitizer == 'thread'
+        # Yeni çekirdeklerde mmap_rnd_bits=32 TSan'ın bellek düzenini bozar
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Yapılandır
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCIHAZ_BUILD_QT=OFF
+          -DCIHAZ_SANITIZER=${{ matrix.sanitizer }}
+      - name: Derle
+        run: cmake --build build
+      - name: Test
+        env:
+          TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    name: Windows (Qt 6.8, MSVC 2022) + dağıtım paketi
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: win64_msvc2022_64
+          modules: qtcharts qtserialport qtserialbus
+          cache: true
+      - name: Yapılandır
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCIHAZ_WERROR=ON
+      - name: Derle
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: windeployqt ile paketle
+        shell: pwsh
+        run: |
+          $d = "dagitim"
+          New-Item -ItemType Directory $d | Out-Null
+          Copy-Item build\cihaz-izleme.exe, build\cihaz-cli.exe, build\kayit-goruntuleyici.exe, sim\msd200_sim.py $d
+          windeployqt --release --qmldir app\qml --no-translations "$d\cihaz-izleme.exe"
+          windeployqt --release --no-translations "$d\kayit-goruntuleyici.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cihaz-izleme-windows-x64
+          path: dagitim
