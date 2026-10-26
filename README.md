@@ -1,5 +1,7 @@
 # cihaz-izleme-qt
 
+[![CI](https://github.com/l4NGEL/cihaz-izleme-qt/actions/workflows/ci.yml/badge.svg)](https://github.com/l4NGEL/cihaz-izleme-qt/actions/workflows/ci.yml)
+
 Bir motor sürücüsüyle UART, RS-485 (Modbus RTU), Modbus TCP ve CAN üzerinden konuşan,
 gelen veriyi canlı çizen ve ham olarak kaydeden bir Qt 6 / QML masaüstü uygulaması.
 C++17 ile yazıldı. Windows (MSVC) ve Linux (GCC) üzerinde derlenip test edildi.
